@@ -1,0 +1,2 @@
+../Src/mhz19.c:10:16:MHZ19_checksum	24	static
+../Src/mhz19.c:18:6:MHZ19_read	32	static

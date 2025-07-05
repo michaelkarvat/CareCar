@@ -1,0 +1,3 @@
+../Src/hx711.c:14:6:hx711_delay	16	static
+../Src/hx711.c:19:6:hx711_gpio_init	4	static
+../Src/hx711.c:30:15:HX711_Read	16	static

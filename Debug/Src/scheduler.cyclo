@@ -1,0 +1,4 @@
+../Src/scheduler.c:33:6:SCHEDULER_send_command	3
+../Src/scheduler.c:51:6:SCHEDULER_HANG_UP_CALL	1
+../Src/scheduler.c:58:6:SCHEDULER_handle	7
+../Src/scheduler.c:98:6:triger_alert	2

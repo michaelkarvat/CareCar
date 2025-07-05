@@ -1,0 +1,3 @@
+../Src/processing.c:27:6:ALG_handle	32	static
+../Src/processing.c:79:6:ALG_reset	8	static
+../Src/processing.c:85:6:ALG_isAlertTriggered	4	static

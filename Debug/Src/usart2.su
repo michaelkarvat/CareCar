@@ -1,0 +1,8 @@
+../Inc/core_cm4.h:1688:22:__NVIC_EnableIRQ	16	static
+../Src/usart2.c:26:6:print	16	static
+../Src/usart2.c:37:6:USART2_commandReceived	4	static
+../Src/usart2.c:53:6:USART2_getCommand	16	static
+../Src/usart2.c:61:6:USART2_init	8	static
+../Src/usart2.c:82:6:USART2_EXTI26_IRQHandler	16	static
+../Src/usart2.c:111:6:USART2_printCharacter	16	static
+../Src/usart2.c:120:6:USART2_print	16	static
