@@ -64,9 +64,26 @@ static void processSmsLine(const char *line)
 
 void USART1_init(void)
 {
-    // … your existing pin/baud/interrupt setup …
+    // 1) Enable GPIOB clock (bit18)
+    RCC->AHBENR  |= 0x00040000;      // RCC_AHBENR_GPIOBEN
 
-    // put SIM in text‐mode SMS, route new SMS directly or as index
+    // 2) Enable USART3 clock on APB1 (bit18)
+    RCC->APB1ENR |= 0x00040000;      // RCC_APB1ENR_USART3EN
+
+    // 3) Configure PB10 (TX) & PB11 (RX) as AF7
+    GPIOB->MODER |= (0x2 << (10 * 2)) | (0x2 << (11 * 2));
+    GPIOB->AFR[1] |= (0x7 << ((10 - 8) * 4)) | (0x7 << ((11 - 8) * 4));
+
+    // 4) Set baud rate to 115200 @ 8 MHz PCLK1 → BRR = 69
+    USART3->BRR = 69;
+
+    // 5) Enable USART3, Rx, Tx, and Rx interrupt
+    //    UE=bit0, RE=bit2, TE=bit3, RXNEIE=bit5 → 0x2D
+    USART3->CR1 = 0x0000002D;
+
+    // 6) Enable NVIC interrupt for USART3 (shared with UART4)
+    NVIC_EnableIRQ(USART3_IRQn);
+
     USART1_print("AT+CMGF=1\r\n");
     USART1_print("AT+CNMI=2,1,0,0,0\r\n");
 }
