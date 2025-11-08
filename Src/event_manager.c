@@ -22,7 +22,6 @@ void event_manager_handler(void) {
             SCHEDULER_handle();
         }
 
-
         //received command from the sim.
         if (USART1_commandReceived()){
         	char response[64];
