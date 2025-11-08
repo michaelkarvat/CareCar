@@ -29,6 +29,5 @@ void event_manager_handler(void) {
 			USART1_getCommand(response);
 			print("SIMCom => %s\n", response);
 		}
-        //i++;
     }
 }
