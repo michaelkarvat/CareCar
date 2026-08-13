@@ -1,46 +1,77 @@
-#include "mhz19.h"
-#include "mhz19_usart1.h"  // low‑level USART1 routines
-#include "usart2.h"        // for debug printing, if you like
-#include <string.h>
+/**
+ * @file    mhz19.c
+ * @brief   MH-Z19 CO2 sensor protocol: request, validate and decode a reading.
+ */
 
-static const uint8_t MHZ19_Read_Cmd[MHZ19_FRAME_LENGTH] = {
+#include "co2_uart.h"
+#include "mhz19.h"
+
+/** Byte offsets within an MH-Z19 frame. */
+#define MHZ19_OFFSET_START          0U
+#define MHZ19_OFFSET_COMMAND        1U
+#define MHZ19_OFFSET_CO2_HIGH       2U
+#define MHZ19_OFFSET_CO2_LOW        3U
+#define MHZ19_OFFSET_TEMPERATURE    4U
+#define MHZ19_OFFSET_CHECKSUM       8U
+
+#define MHZ19_START_BYTE            0xFFU
+#define MHZ19_COMMAND_READ_CO2      0x86U
+
+/** The sensor encodes temperature with a fixed offset instead of a sign bit. */
+#define MHZ19_TEMPERATURE_OFFSET_C  40
+
+/** "Read gas concentration" request, checksum included. */
+static const uint8_t readCo2Command[MHZ19_FRAME_LENGTH] = {
     0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79
 };
 
-static uint8_t MHZ19_checksum(const uint8_t *packet) {
-    uint8_t sum = 0;
-    for (int i = 1; i < 8; i++) {
-        sum += packet[i];
+/**
+ * Datasheet checksum: negated sum of every byte except the start byte and the
+ * checksum byte itself.
+ */
+static uint8_t computeChecksum(const uint8_t *frame)
+{
+    uint8_t sum = 0U;
+    for (uint8_t i = MHZ19_OFFSET_COMMAND; i < MHZ19_OFFSET_CHECKSUM; i++)
+    {
+        sum += frame[i];
     }
-    return (uint8_t)(0xFF - sum + 1);
+    return (uint8_t)(0xFFU - sum + 1U);
 }
 
-BOOL MHZ19_read(int *ppm, int *temperature) {
-    // 1) Send the “read CO2” command
-    for (int i = 0; i < MHZ19_FRAME_LENGTH; i++) {
-        MHZ19_USART1_printCharacter(MHZ19_Read_Cmd[i]);
+void Mhz19_init(void)
+{
+    Co2Uart_init();
+}
+
+bool Mhz19_read(Mhz19_Reading *reading)
+{
+    Co2Uart_sendFrame(readCo2Command);
+
+    if (!Co2Uart_hasFrame())
+    {
+        return false;
     }
 
-    // 2) Wait for data from the sensor (via interrupt)
-    if (!MHZ19_USART1_dataAvailable()) {
-        return FALSE;
+    uint8_t frame[MHZ19_FRAME_LENGTH];
+    Co2Uart_readFrame(frame);
+
+    const bool headerValid = (frame[MHZ19_OFFSET_START] == MHZ19_START_BYTE) &&
+                             (frame[MHZ19_OFFSET_COMMAND] == MHZ19_COMMAND_READ_CO2);
+    if (!headerValid)
+    {
+        return false;
     }
 
-    // 3) Grab the frame
-    uint8_t response[MHZ19_FRAME_LENGTH];
-    MHZ19_USART1_getData(response);
-
-    // 4) Validate header and checksum
-    if (response[0] != 0xFF || response[1] != 0x86) {
-        return FALSE;
-    }
-    if (MHZ19_checksum(response) != response[8]) {
-        return FALSE;
+    if (computeChecksum(frame) != frame[MHZ19_OFFSET_CHECKSUM])
+    {
+        return false;
     }
 
-    // 5) Parse values
-    *ppm         = ((int)response[2] << 8) | response[3];
-    *temperature = (int)response[4] - 40;
+    reading->co2Ppm = ((int)frame[MHZ19_OFFSET_CO2_HIGH] << 8) |
+                      (int)frame[MHZ19_OFFSET_CO2_LOW];
+    reading->temperatureC =
+        (int)frame[MHZ19_OFFSET_TEMPERATURE] - MHZ19_TEMPERATURE_OFFSET_C;
 
-    return TRUE;
+    return true;
 }

@@ -1,106 +1,108 @@
-// scheduler.c
-/*
- * scheduler.c
- *  Created on: Apr 23, 2025
- *      Author: michaelkarvat
+/**
+ * @file    scheduler.c
+ * @brief   Drives the sample -> decide -> alert cycle once per system tick.
+ *
+ * Implemented as a three-state machine rather than a blocking sequence so that
+ * the main loop keeps servicing the console and the modem while an alert call
+ * is ringing.
+ *
+ *   MONITORING --alert confirmed--> ALERTING --call placed--> CALLING
+ *        ^                                                       |
+ *        +--------------------- call duration elapsed ------------+
  */
 
+#include <stdint.h>
+
+#include "alert_contact.h"
+#include "app_config.h"
+#include "debug_uart.h"
+#include "gsm_modem.h"
+#include "safety_monitor.h"
 #include "scheduler.h"
-#include "types.h"
-#include "usart2.h"
-#include "processing.h"
-#include "usart1.h"
-#include <stdio.h>   // for snprintf
 
-// The phone‐number string, defaulting to the original number
-char g_phoneNumber[PHONE_NUMBER_MAX_LEN] = "+972545902372";
-
-// How many seconds to wait before hanging up
-#define ALERT_SUPPRESSION_SECONDS 20
-
-// Scheduler internal states
-typedef enum {
-    SCHED_STATE_REGULAR,  // Normal operation: check ALG_handle()
-    SCHED_STATE_CONTACT,  // Send the alert
-    SCHED_STATE_DELAY     // Wait then hang up
-} SchedState;
-
-// Current state and counter
-static SchedState schedState = SCHED_STATE_REGULAR;
-static int        suppressionCounter = 0;
-
-/// Send the actual alert (called once in CONTACT state)
-void SCHEDULER_send_command(void)
+typedef enum
 {
-    print("******************** Alert: Child left in car! *******************\n");
-    // Wake up SIM module
-    USART1_print("AT\r\n");
-    print("Sent 'AT' to SIMCom.\n");
+    SCHEDULER_MONITORING,   /**< Sampling sensors, no alert in progress. */
+    SCHEDULER_ALERTING,     /**< Alert confirmed, place the call this tick. */
+    SCHEDULER_CALLING       /**< Call in progress, waiting to hang up. */
+} SchedulerState;
 
-    // Dial the currently configured number
-    char cmd[PHONE_NUMBER_MAX_LEN + 8];
-    int n = snprintf(cmd, sizeof(cmd), "ATD%s;\r\n", g_phoneNumber);
-    if (n > 0 && n < (int)sizeof(cmd)) {
-        USART1_print(cmd);
-    } else {
-        print("Error: phone number too long\n");
-    }
-}
+static SchedulerState state = SCHEDULER_MONITORING;
 
-/// Hang up an ongoing call
-void SCHEDULER_HANG_UP_CALL(void)
+/** Ticks left before the alert call is terminated. */
+static uint8_t callTicksRemaining = 0U;
+
+/**
+ * Consume a confirmed alert.
+ *
+ * The monitor is reset here so that it starts a fresh debounce window instead
+ * of re-triggering on the same event while the call is still ringing.
+ */
+static bool takeConfirmedAlert(void)
 {
-    print("Scheduler_handle: Hanging up call\n");
-    USART1_print("AT+CHUP\r\n");
-}
-
-/// This runs once per second (driven by event_manager → TIMER2_expired)
-void SCHEDULER_handle(void)
-{
-    switch (schedState)
+    if (!SafetyMonitor_isAlertActive())
     {
-        case SCHED_STATE_REGULAR:
-            // Normal sensor/state processing
-            ALG_handle();
-            // If ALG signals an alert, move to CONTACT
-            if (triger_alert())
-            {
-                schedState = SCHED_STATE_CONTACT;
-            }
-            break;
-
-        case SCHED_STATE_CONTACT:
-            // Fire off the alert once
-            SCHEDULER_send_command();
-            // Start the hang-up timer
-            suppressionCounter = ALERT_SUPPRESSION_SECONDS;
-            schedState = SCHED_STATE_DELAY;
-            break;
-
-        case SCHED_STATE_DELAY:
-            if (suppressionCounter > 0)
-            {
-                // Still waiting: decrement and stay in DELAY
-                suppressionCounter--;
-                print("CALLING : %d seconds remaining\n", suppressionCounter);
-            }
-            else
-            {
-                // Time’s up: hang up and return to REGULAR
-                SCHEDULER_HANG_UP_CALL();
-                schedState = SCHED_STATE_REGULAR;
-            }
-            break;
+        return false;
     }
+    SafetyMonitor_reset();
+    return true;
 }
 
-/// Helper: detect and clear an ALG alert flag
-BOOL triger_alert(void)
+static void raiseAlert(void)
 {
-    if (ALG_isAlertTriggered())
+    DebugUart_printf("*** ALERT: child left in vehicle ***\n");
+
+    if (!AlertContact_isConfigured())
     {
-        ALG_reset();
-        return TRUE;
+        DebugUart_printf("No alert number configured; send 'setnum <number>'\n");
+        return;
     }
-    return FALSE;
+
+    DebugUart_printf("Calling %s\n", AlertContact_get());
+    GsmModem_placeCall(AlertContact_get());
+}
+
+void Scheduler_init(void)
+{
+    state = SCHEDULER_MONITORING;
+    callTicksRemaining = 0U;
+}
+
+void Scheduler_tick(void)
+{
+    switch (state)
+    {
+    case SCHEDULER_MONITORING:
+        SafetyMonitor_update();
+        if (takeConfirmedAlert())
+        {
+            state = SCHEDULER_ALERTING;
+        }
+        break;
+
+    case SCHEDULER_ALERTING:
+        raiseAlert();
+        callTicksRemaining = ALERT_CALL_DURATION_TICKS;
+        state = SCHEDULER_CALLING;
+        break;
+
+    case SCHEDULER_CALLING:
+        if (callTicksRemaining > 0U)
+        {
+            callTicksRemaining--;
+            DebugUart_printf("Calling: %u ticks remaining\n",
+                             (unsigned)callTicksRemaining);
+        }
+        else
+        {
+            DebugUart_printf("Hanging up\n");
+            GsmModem_hangUp();
+            state = SCHEDULER_MONITORING;
+        }
+        break;
+
+    default:
+        state = SCHEDULER_MONITORING;
+        break;
+    }
 }

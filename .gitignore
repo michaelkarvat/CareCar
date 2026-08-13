@@ -1,0 +1,28 @@
+# --- Build output -------------------------------------------------------
+# STM32CubeIDE regenerates these from the project configuration.
+Debug/
+Release/
+*.o
+*.d
+*.su
+*.cyclo
+*.elf
+*.bin
+*.hex
+*.map
+*.list
+
+# --- IDE / user-specific ------------------------------------------------
+# .project and .cproject are committed on purpose: they are what lets
+# STM32CubeIDE open this repository. Everything below is per-machine state.
+.settings/
+*.launch
+.metadata/
+RemoteSystemsTempFiles/
+.vscode/
+.idea/
+.claude/
+
+# --- OS -----------------------------------------------------------------
+Thumbs.db
+.DS_Store
