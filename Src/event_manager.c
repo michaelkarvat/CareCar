@@ -1,32 +1,31 @@
+/**
+ * @file    event_manager.c
+ * @brief   The firmware's main loop.
+ */
+
+#include "debug_uart.h"
 #include "event_manager.h"
-//#include "processing.h"
-#include "usart2.h" // Add this line
-#include "usart1.h"
-#include <stdio.h>
-#include "types.h"
-//#include "terminal.h"
-#include "timer2.h"
+#include "gsm_modem.h"
 #include "scheduler.h"
+#include "terminal.h"
+#include "tick_timer.h"
 
-void event_manager_handler(void) {
-    printf("Event manager handler\n");
+void EventManager_run(void)
+{
+    DebugUart_printf("Event loop running\n");
 
-    int i = 0;
-    while (1) {
-
-        if (USART2_commandReceived()) {
-            TERMINAL_handleCommand();
+    for (;;)
+    {
+        if (DebugUart_hasCommand())
+        {
+            Terminal_handleConsoleCommand();
         }
 
-        if (TIMER2_expired()) {
-            SCHEDULER_handle();
+        if (TickTimer_hasElapsed())
+        {
+            Scheduler_tick();
         }
 
-        //received command from the sim.
-        if (USART1_commandReceived()){
-        	char response[64];
-			USART1_getCommand(response);
-			print("SIMCom => %s\n", response);
-		}
+        GsmModem_pollLog();
     }
 }

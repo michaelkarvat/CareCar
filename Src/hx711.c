@@ -1,68 +1,98 @@
+/**
+ * @file    hx711.c
+ * @brief   Bit-banged driver for the HX711 24-bit load cell amplifier.
+ */
 
-/* =================== HX711 Code =================== */
-#include "stm32f303xe.h"
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
-#include "types.h"
+#include <stdbool.h>
+
 #include "hx711.h"
+#include "stm32f303xe.h"
 
+/** Both amplifiers are wired to port B. */
+#define HX711_PORT              GPIOB
 
+#define HX711_SAMPLE_BITS       24U
 
+/**
+ * Clock pulses after the sample select the next conversion's input.
+ * 25 total pulses = channel A at gain 128, which is what the load cells use.
+ */
+#define HX711_GAIN_PULSES       1U
 
-// Short delay routine (used for generating proper pulse timing)
-void hx711_delay(volatile int count)
+/** The amplifier reports offset binary, so mid-scale is the zero-load point. */
+#define HX711_ZERO_LOAD_OFFSET  0x800000UL
+
+#define MODER_BITS_PER_PIN      2U
+#define MODER_MASK              0x3U
+#define MODER_OUTPUT            0x1U
+#define MODER_INPUT             0x0U
+
+static uint32_t pinMask(uint32_t pin)
 {
-    while(count--);
+    return 1UL << pin;
 }
 
-void hx711_gpio_init(void)
+static void setClock(const Hx711 *sensor, bool high)
 {
-    // Enable GPIOB clock (bit 18 in AHBENR)
-    RCC->AHBENR |= (1 << 18);
-    // Configure PB0 as output (for PD_SCK)
-    GPIOB->MODER &= ~(3 << (0*2));
-    GPIOB->MODER |=  (1 << (0*2));
-    // Configure PB1 as input (for DOUT)
-    GPIOB->MODER &= ~(3 << (1*2));
-}
-
-unsigned long HX711_Read(void)
-{
-    unsigned long count = 0;
-    uint8_t i;
-
-    // Wait until DOUT goes LOW (data ready)
-    while((GPIOB->IDR & HX711_DOUT_PIN) != 0);
-
-    // Read 24 bits from HX711
-    for(i = 0; i < 24; i++)
+    if (high)
     {
-        // PD_SCK high: start bit reading
-        GPIOB->ODR |= HX711_PD_SCK_PIN;
-        //hx711_delay(10);
+        HX711_PORT->ODR |= pinMask(sensor->clockPin);
+    }
+    else
+    {
+        HX711_PORT->ODR &= ~pinMask(sensor->clockPin);
+    }
+}
 
-        count = count << 1;
+static void pulseClock(const Hx711 *sensor)
+{
+    setClock(sensor, true);
+    setClock(sensor, false);
+}
 
-        // PD_SCK low: complete the clock cycle
-        GPIOB->ODR &= ~HX711_PD_SCK_PIN;
-        //hx711_delay(10);
+static bool readData(const Hx711 *sensor)
+{
+    return (HX711_PORT->IDR & pinMask(sensor->dataPin)) != 0U;
+}
 
-        // If DOUT is high, set the least-significant bit
-        if(GPIOB->IDR & HX711_DOUT_PIN)
+void Hx711_init(const Hx711 *sensor)
+{
+    RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
+
+    const uint32_t clockShift = sensor->clockPin * MODER_BITS_PER_PIN;
+    HX711_PORT->MODER &= ~(MODER_MASK << clockShift);
+    HX711_PORT->MODER |= (MODER_OUTPUT << clockShift);
+
+    const uint32_t dataShift = sensor->dataPin * MODER_BITS_PER_PIN;
+    HX711_PORT->MODER &= ~(MODER_MASK << dataShift);
+    HX711_PORT->MODER |= (MODER_INPUT << dataShift);
+}
+
+uint32_t Hx711_read(const Hx711 *sensor)
+{
+    /* DOUT stays high until a conversion is ready. */
+    while (readData(sensor))
+    {
+    }
+
+    uint32_t sample = 0UL;
+    for (uint8_t bit = 0U; bit < HX711_SAMPLE_BITS; bit++)
+    {
+        /* Data is presented on the falling edge, MSB first. */
+        setClock(sensor, true);
+        sample <<= 1;
+        setClock(sensor, false);
+
+        if (readData(sensor))
         {
-            count++;
+            sample |= 1UL;
         }
     }
 
-    // Send one extra pulse to set gain/channel (25 pulses = Channel A, gain = 128)
-    GPIOB->ODR |= HX711_PD_SCK_PIN;
-    //hx711_delay(10);
-    GPIOB->ODR &= ~HX711_PD_SCK_PIN;
-    //hx711_delay(10);
+    for (uint8_t pulse = 0U; pulse < HX711_GAIN_PULSES; pulse++)
+    {
+        pulseClock(sensor);
+    }
 
-    // Convert 24-bit two's complement to proper value
-    count ^= 0x800000;
-
-    return count;
+    return sample ^ HX711_ZERO_LOAD_OFFSET;
 }

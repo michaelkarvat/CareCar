@@ -1,46 +1,37 @@
-#include "stm32f303xe.h"
-#include "usart1.h"  // The new code (PA9/PA10 @ 115200)
-#include "usart2.h"  // Your existing debug code
-#include "types.h"
-#include "timer2.h"
-#include "hx711.h"
-#include "hx711_parent.h"
-#include "mhz19.h"
+/**
+ * @file    main.c
+ * @brief   CareCar entry point: bring up every subsystem, then run the loop.
+ *
+ * Initialisation order matters: the debug console comes up first so that the
+ * rest of the bring-up sequence is observable, and the tick timer comes up
+ * last so that no tick fires before the modules that service it exist.
+ */
 
-
+#include "alert_contact.h"
+#include "debug_uart.h"
 #include "event_manager.h"
-//#include "processing.h"
+#include "gsm_modem.h"
+#include "safety_monitor.h"
+#include "scheduler.h"
+#include "tick_timer.h"
 
-
-int main()
+int main(void)
 {
+    DebugUart_init();
+    DebugUart_printf("\nCareCar starting\n");
 
-	//inti all the modules
-    print("System init start\n");
-    // 1) Init debug USART2 (PC connection).
-    USART2_init();
-    print("USART2 (PC) initialized.\n");
+    AlertContact_init();
+    GsmModem_init();
+    DebugUart_printf("GSM modem link up\n");
 
-    // 2) Init USART1 for SIMCom (PA9/PA10, 115200).
-    USART1_init();
-    print("USART1 (SIMCom) initialized at 115200.\n");
+    SafetyMonitor_init();
+    DebugUart_printf("Sensors up\n");
 
-    TIMER2_init();
-    hx711_gpio_init();
-    hx711_parent_gpio_init();
+    Scheduler_init();
+    TickTimer_init();
+    DebugUart_printf("Init complete\n");
 
-    // 3) Send basic "AT" command to the SIMCom.
-    USART1_print("AT\r\n");
-    print("Sent 'AT' to SIMCom.\n");
-    USART1_print("AT+COPS=?\r\n");
-    //AT+COPS=?
-
-    MHZ19_USART1_init();
-
-    /*==============================================*/
-
-    event_manager_handler();
+    EventManager_run();
 
     return 0;
 }
-

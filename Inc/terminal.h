@@ -1,10 +1,28 @@
+/**
+ * @file    terminal.h
+ * @brief   Text command interpreter shared by the debug console and SMS.
+ *
+ * Both remote-control paths carry the same one-line command syntax, so they
+ * share one interpreter rather than each parsing commands themselves.
+ *
+ * Supported commands:
+ *   setnum <number>   Set the phone number called when an alert is raised.
+ */
+
 #ifndef TERMINAL_H
 #define TERMINAL_H
 
-// How big your command buffer is:
-#define TERMINAL_SIZE_OF_COMMAND_BUFFER 32
+#include <stdbool.h>
 
-// Processes a command that has just arrived via USART2.
-void TERMINAL_handleCommand(void);
+/**
+ * Parse and execute one command line.
+ *
+ * @param line NUL-terminated command, without its line terminator.
+ * @return true if the line was recognised as a command and executed.
+ */
+bool Terminal_executeCommand(const char *line);
 
-#endif // TERMINAL_H
+/** Read one line from the debug console and execute it. */
+void Terminal_handleConsoleCommand(void);
+
+#endif /* TERMINAL_H */

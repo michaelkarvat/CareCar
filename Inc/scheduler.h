@@ -1,31 +1,19 @@
+/**
+ * @file    scheduler.h
+ * @brief   Drives the sample -> decide -> alert cycle once per system tick.
+ */
+
 #ifndef SCHEDULER_H
 #define SCHEDULER_H
 
-#include "types.h"  // Make sure to include your types definitions (e.g., BOOL)
+/** Reset the scheduler to its idle state. */
+void Scheduler_init(void);
 
 /**
- * Sends an alert command (e.g., notifies the parent).
+ * Advance the scheduler by one tick.
+ *
+ * Call from the main loop whenever TickTimer_hasElapsed() returns true.
  */
-void SCHEDULER_send_command(void);
+void Scheduler_tick(void);
 
-void SCHEDULER_HANG_UP_CALL(void);
-
-/**
- * Periodically called function that triggers sensor reads
- * and updates the algorithm's state.
- */
-void SCHEDULER_handle(void);
-
-/**
- * Checks if an alert condition has been reached.
- * @return TRUE if the alert condition is met.
- */
-BOOL triger_alert(void);
-
-
-#define PHONE_NUMBER_MAX_LEN 20
-
-// Global phone-number string (modifiable via terminal)
-extern char g_phoneNumber[PHONE_NUMBER_MAX_LEN];
-
-#endif // SCHEDULER_H
+#endif /* SCHEDULER_H */

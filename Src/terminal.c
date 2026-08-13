@@ -1,34 +1,61 @@
-// terminal.c
+/**
+ * @file    terminal.c
+ * @brief   Text command interpreter shared by the debug console and SMS.
+ */
+
 #include <string.h>
+
+#include "alert_contact.h"
+#include "debug_uart.h"
 #include "terminal.h"
-#include "usart2.h"
-#include "scheduler.h"
 
-static char A_Command_Buffer[TERMINAL_SIZE_OF_COMMAND_BUFFER];
+#define COMMAND_SET_NUMBER      "setnum "
 
-void TERMINAL_handleCommand(void)
+/**
+ * Match a command keyword and return the argument that follows it.
+ *
+ * @param line    Command line to test.
+ * @param keyword Keyword including its trailing space.
+ * @return Pointer to the argument, or NULL if the line does not match.
+ */
+static const char *matchCommand(const char *line, const char *keyword)
 {
-    USART2_getCommand(A_Command_Buffer);
-    print("<=+=+= %s =+=+=>\n", A_Command_Buffer);
+    const size_t keywordLength = strlen(keyword);
 
-    const char *prefix = "setnum ";
-    if (strncmp(A_Command_Buffer, prefix, strlen(prefix)) == 0) {
-        char *newNum = A_Command_Buffer + strlen(prefix);
+    if (strncmp(line, keyword, keywordLength) != 0)
+    {
+        return NULL;
+    }
+    return line + keywordLength;
+}
 
-        // Build a formatted number with leading '+'
-        char formatted[PHONE_NUMBER_MAX_LEN];
-        if (newNum[0] != '+') {
-            // prepend '+'
-            snprintf(formatted, sizeof(formatted), "+%s", newNum);
-        } else {
-            // user somehow included it already
-            snprintf(formatted, sizeof(formatted), "%s", newNum);
-        }
+bool Terminal_executeCommand(const char *line)
+{
+    const char *number = matchCommand(line, COMMAND_SET_NUMBER);
+    if (number == NULL)
+    {
+        return false;
+    }
 
-        // Copy into the global phone buffer
-        strncpy(g_phoneNumber, formatted, PHONE_NUMBER_MAX_LEN - 1);
-        g_phoneNumber[PHONE_NUMBER_MAX_LEN - 1] = '\0';
+    if (!AlertContact_set(number))
+    {
+        DebugUart_printf("setnum: rejected '%s'\n", number);
+        return false;
+    }
 
-        print("Phone number set to %s\n", g_phoneNumber);
+    DebugUart_printf("Alert number set to %s\n", AlertContact_get());
+    return true;
+}
+
+void Terminal_handleConsoleCommand(void)
+{
+    char line[DEBUG_UART_RX_BUFFER_SIZE];
+
+    DebugUart_readCommand(line);
+    DebugUart_printf("> %s\n", line);
+
+    if (!Terminal_executeCommand(line))
+    {
+        DebugUart_printf("Unknown command. Try: setnum <number>\n");
     }
 }
